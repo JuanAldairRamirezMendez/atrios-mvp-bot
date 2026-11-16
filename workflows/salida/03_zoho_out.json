@@ -1,0 +1,126 @@
+{
+  "name": "03_zoho_out",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "telefono"
+            },
+            {
+              "name": "respuesta"
+            },
+            {
+              "name": "derivar"
+            },
+            {
+              "name": "nombre"
+            },
+            {
+              "name": "servicio"
+            },
+            {
+              "name": "direccion"
+            },
+            {
+              "name": "estado"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        300
+      ],
+      "id": "trigger-salida",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const entrada = $input.first().json;\n\n// Extraer datos con valores por defecto seguros\nconst telefono = String(entrada.telefono || '').replace(/[^0-9]/g, '');\nconst nombre = (entrada.nombre || '').trim() || `Prospecto WhatsApp ${telefono}`;\nconst servicio = (entrada.servicio || 'Seguridad Electrónica').trim();\nconst direccion = (entrada.direccion || 'No especificada').trim();\nconst estado = entrada.estado || (entrada.derivar ? 'Atención Urgente' : 'No Contactado');\n\n// Si la IA derivó a humano o no hay respuesta, mensaje de respaldo\nconst mensajeRespuesta = entrada.derivar || !entrada.respuesta\n  ? 'Gracias por comunicarte con Atrios. Un asesor comercial especializado se pondrá en contacto contigo a la brevedad para brindarte una atención personalizada.'\n  : entrada.respuesta;\n\nreturn [{\n  json: {\n    telefono,\n    nombre,\n    servicio,\n    direccion,\n    estado,\n    mensaje_final: mensajeRespuesta,\n    Last_Name: nombre,\n    Company: 'Particular - Atrios [TEST]',\n    Phone: telefono,\n    Street: direccion,\n    Lead_Status: estado,\n    Description: `Servicio de interés: ${servicio} | Origen: WhatsApp Bot Atrios | Derivar a Humano: ${entrada.derivar ? 'SÍ' : 'NO'}`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "id": "preparar-datos-lead",
+      "name": "Preparar Datos Lead"
+    },
+    {
+      "parameters": {
+        "resource": "lead",
+        "operation": "create",
+        "lastName": "={{ $json.Last_Name }}",
+        "company": "={{ $json.Company }}",
+        "additionalFields": {
+          "phone": "={{ $json.Phone }}",
+          "street": "={{ $json.Street }}",
+          "leadStatus": "={{ $json.Lead_Status }}",
+          "description": "={{ $json.Description }}"
+        }
+      },
+      "type": "n8n-nodes-base.zohoCrm",
+      "typeVersion": 1,
+      "position": [
+        720,
+        300
+      ],
+      "id": "zoho-crm-lead",
+      "name": "Zoho CRM: Crear Lead",
+      "credentials": {
+        "zohoOAuth2Api": {
+          "id": "zoho_oauth_atrios",
+          "name": "Zoho CRM OAuth2 Account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "telefono": "51981561552",
+          "respuesta": "¡Hola! Con gusto te cotizamos las cámaras de seguridad. Un asesor comercial se comunicará contigo.",
+          "derivar": false,
+          "nombre": "Carlos Mendoza",
+          "servicio": "Cámaras de seguridad",
+          "direccion": "Av. Javier Prado Este 1234, San Isidro",
+          "estado": "Nuevo"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Preparar Datos Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Datos Lead": {
+      "main": [
+        [
+          {
+            "node": "Zoho CRM: Crear Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
