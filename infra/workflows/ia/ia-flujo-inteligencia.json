@@ -48,8 +48,8 @@
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
-        1488,
-        0
+        1840,
+        48
       ],
       "id": "e21f39b8-e17a-4676-8039-332920b50cc6",
       "name": "Redis1",
@@ -125,13 +125,14 @@
       ],
       "id": "8d9ceeee-ccf1-4861-807f-b7914b06cbf0",
       "name": "HTTP Request",
-      "retryOnFail": true,
+      "retryOnFail": false,
       "credentials": {
         "httpHeaderAuth": {
           "id": "fDrT0iS6Oglj47sh",
           "name": "Gemini API KEY"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -140,11 +141,119 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1296,
-        0
+        1312,
+        -48
       ],
       "id": "512bf2b8-2df5-4556-b1ed-3efe74d95f3c",
       "name": "Procesar respuesta"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Prompt del sistema').first().json;\nconst intento = $runIndex + 1; // 1, 2, 3: cuántas veces ha fallado\nconst raw = JSON.stringify($json);\nconst esRateLimit = /429|RESOURCE_EXHAUSTED|rate limit/i.test(raw);\nconst reintentar = esRateLimit && intento < 3;\n\nreturn [{ json: { ...base, intento, esRateLimit, reintentar } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        336
+      ],
+      "id": "6d8acdc4-e982-4e9a-a56d-41a40a1704a1",
+      "name": "Evaluar error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "51a1351d-4e58-486a-bfb3-d870ddc6f5d0",
+              "leftValue": "={{ $json.reintentar }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1184,
+        480
+      ],
+      "id": "4d3bf8a2-9570-4a3a-adc1-d8bacb212afb",
+      "name": "¿Reintentar?"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        208
+      ],
+      "id": "770bbd06-9f4f-4140-b424-5a23bd521730",
+      "name": "Wait",
+      "webhookId": "523b44ee-40de-4822-9c41-7161ae6ff136"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst base = $('Prompt del sistema').first().json;\n\nconst estado = {\n  ...base.estado,\n  paso: 'Requiere Humano',\n  intentos: src.intento ?? 0,\n  actualizado: new Date().toISOString()\n};\nestado.historial = [\n  ...(estado.historial || []),\n  { rol: 'usuario', texto: base.mensaje }\n].slice(-10);\n\nreturn [{\n  json: {\n    telefono: base.telefono,\n    mensaje: base.mensaje,\n    respuesta: 'Gracias por escribirnos. Un asesor de Atrios te atenderá en breve para ayudarte personalmente.',\n    derivar: true,\n    estado\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        352
+      ],
+      "id": "96c75663-b8c0-4800-b80d-0e0910d06947",
+      "name": "Preparar derivación"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "f2091b9b-6676-4d51-af1d-cbfb9d03d470",
+              "leftValue": "={{ $json.derivar }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1536,
+        -48
+      ],
+      "id": "9740d7c5-7c62-4250-8f05-edeabcb32d23",
+      "name": "¿Derivar?"
     }
   ],
   "pinData": {
@@ -215,6 +324,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Evaluar error",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -222,7 +338,76 @@
       "main": [
         [
           {
+            "node": "¿Derivar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluar error": {
+      "main": [
+        [
+          {
+            "node": "¿Reintentar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reintentar?": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar derivación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar derivación": {
+      "main": [
+        [
+          {
             "node": "Redis1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Derivar?": {
+      "main": [
+        [
+          {
+            "node": "Preparar derivación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Redis1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
             "type": "main",
             "index": 0
           }
@@ -235,7 +420,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "70b25841-4c88-4b83-be09-ded903cf9187",
+  "versionId": "d3a4962e-9d55-4166-8ab1-cb633cc76dfc",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "52ced82547665e0e456165a6386346ce56c03c027f6f0986ffc6b684b790e415"
