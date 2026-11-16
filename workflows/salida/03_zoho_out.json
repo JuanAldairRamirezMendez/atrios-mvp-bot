@@ -1,0 +1,241 @@
+{
+  "name": "03_zoho_out",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "telefono"
+            },
+            {
+              "name": "respuesta"
+            },
+            {
+              "name": "derivar"
+            },
+            {
+              "name": "nombre"
+            },
+            {
+              "name": "servicio"
+            },
+            {
+              "name": "direccion"
+            },
+            {
+              "name": "estado"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        300
+      ],
+      "id": "trigger-salida-antony",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const entrada = $input.first().json;\n\n// Extraer datos con valores por defecto seguros\nconst telefono = String(entrada.telefono || '').replace(/[^0-9]/g, '');\nconst nombre = (entrada.nombre || '').trim() || `Prospecto WhatsApp ${telefono}`;\nconst servicio = (entrada.servicio || 'Seguridad Electrónica').trim();\nconst direccion = (entrada.direccion || 'Lima, Perú').trim();\nconst derivar = Boolean(entrada.derivar);\nconst estado = entrada.estado || (derivar ? 'Atención Urgente' : 'No Contactado');\n\n// Si la IA derivó a humano o no hay respuesta, mensaje de respaldo\nconst mensajeRespuesta = derivar || !entrada.respuesta\n  ? 'Gracias por comunicarte con Atrios. Un asesor comercial especializado se pondrá en contacto contigo a la brevedad para brindarte una atención personalizada.'\n  : entrada.respuesta;\n\nreturn [{\n  json: {\n    telefono,\n    nombre,\n    servicio,\n    direccion,\n    estado,\n    derivar,\n    mensaje_final: mensajeRespuesta,\n    Last_Name: nombre,\n    Company: 'Particular - Atrios [TEST]',\n    Phone: telefono,\n    Street: direccion,\n    Lead_Status: estado,\n    Description: `Servicio de interés: ${servicio} | Origen: WhatsApp Bot Atrios | Derivar a Humano: ${derivar ? 'SÍ' : 'NO'}`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "id": "preparar-datos-lead-antony",
+      "name": "Preparar Datos Lead"
+    },
+    {
+      "parameters": {
+        "resource": "lead",
+        "operation": "create",
+        "lastName": "={{ $json.Last_Name || 'Cliente WhatsApp' }}",
+        "Company": "={{ $json.Company || 'Particular - Atrios [TEST]' }}",
+        "additionalFields": {
+          "phone": "={{ $json.Phone }}",
+          "street": "={{ $json.Street }}",
+          "leadStatus": "={{ $json.Lead_Status }}",
+          "description": "={{ $json.Description }}"
+        }
+      },
+      "type": "n8n-nodes-base.zohoCrm",
+      "typeVersion": 1,
+      "position": [
+        720,
+        300
+      ],
+      "id": "zoho-crm-lead-antony",
+      "name": "Zoho CRM: Crear Lead",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "zohoOAuth2Api": {
+          "id": "zoho_oauth_atrios",
+          "name": "Zoho CRM OAuth2 Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error ? 'ERROR' : ($json.data?.[0]?.status === 'error' ? 'ERROR' : 'OK') }}",
+              "operation": "notEqual",
+              "value2": "ERROR"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        960,
+        300
+      ],
+      "id": "verificar-error-zoho-antony",
+      "name": "¿Zoho Exitoso?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const respuestaZoho = $input.first().json;\nconst datosLead = $('Preparar Datos Lead').first().json;\n\nconst errorLog = {\n  nivel: 'WARN',\n  tipo: 'ERROR_VALIDACION_ZOHO',\n  fecha: new Date().toISOString(),\n  telefono: datosLead.telefono,\n  nombre: datosLead.nombre,\n  detalle: respuestaZoho.error || respuestaZoho.message || respuestaZoho.data?.[0]?.message || 'Fallo de validación de campos en Zoho CRM',\n  codigo: respuestaZoho.code || respuestaZoho.data?.[0]?.code || 'VALIDATION_FAILED'\n};\n\nconsole.warn('⚠️ [AUDITORIA ATRIOS] Error al insertar en Zoho CRM:', JSON.stringify(errorLog));\n\n// Pasar datos originales hacia WhatsApp para no cortar la experiencia del usuario\nreturn [{\n  json: {\n    ...datosLead,\n    zoho_log: errorLog\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        440
+      ],
+      "id": "registrar-error-zoho-antony",
+      "name": "Registrar Error de Zoho"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: \"whatsapp\",\n  recipient_type: \"individual\",\n  to: $json.telefono,\n  type: \"text\",\n  text: {\n    body: $json.mensaje_final\n  }\n}) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        300
+      ],
+      "id": "send-whatsapp-reply-antony",
+      "name": "Enviar WhatsApp (API Graph)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "whatsapp_meta_token",
+          "name": "Header Auth account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "telefono": "51981768092",
+          "respuesta": "¡Hola! Con gusto te cotizamos las cámaras de seguridad. Un asesor comercial se comunicará contigo.",
+          "derivar": false,
+          "nombre": "Carlos Mendoza",
+          "servicio": "Cámaras de seguridad",
+          "direccion": "Av. Javier Prado Este 1234, San Isidro",
+          "estado": "Nuevo"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Preparar Datos Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Datos Lead": {
+      "main": [
+        [
+          {
+            "node": "Zoho CRM: Crear Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zoho CRM: Crear Lead": {
+      "main": [
+        [
+          {
+            "node": "¿Zoho Exitoso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Zoho Exitoso?": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp (API Graph)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar Error de Zoho",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Error de Zoho": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp (API Graph)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
