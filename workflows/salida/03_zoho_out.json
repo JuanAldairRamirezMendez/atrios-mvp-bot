@@ -72,12 +72,47 @@
       ],
       "id": "zoho-crm-lead",
       "name": "Zoho CRM: Crear Lead",
+      "onError": "continueRegularOutput",
       "credentials": {
         "zohoOAuth2Api": {
           "id": "zoho_oauth_atrios",
           "name": "Zoho CRM OAuth2 Account"
         }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error ? 'ERROR' : ($json.data?.[0]?.status === 'error' ? 'ERROR' : 'OK') }}",
+              "operation": "notEqual",
+              "value2": "ERROR"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        960,
+        300
+      ],
+      "id": "verificar-error-zoho",
+      "name": "¿Zoho Exitoso?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const respuestaZoho = $input.first().json;\nconst entradaOriginal = $('Preparar Datos Lead').first().json;\n\nconst errorLog = {\n  nivel: 'WARN',\n  tipo: 'ERROR_VALIDACION_ZOHO',\n  fecha: new Date().toISOString(),\n  telefono: entradaOriginal.telefono,\n  nombre: entradaOriginal.nombre,\n  detalle: respuestaZoho.error || respuestaZoho.message || respuestaZoho.data?.[0]?.message || 'Fallo de validación de campos en Zoho CRM',\n  codigo: respuestaZoho.code || respuestaZoho.data?.[0]?.code || 'VALIDATION_FAILED'\n};\n\n// Registrar en consola de n8n para auditoría\nconsole.warn('⚠️ [AUDITORIA ATRIOS] Error al insertar en Zoho CRM:', JSON.stringify(errorLog));\n\n// Pasar datos originales hacia WhatsApp para no cortar la experiencia del usuario\nreturn [{\n  json: {\n    ...entradaOriginal,\n    zoho_log: errorLog\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        440
+      ],
+      "id": "registrar-error-zoho",
+      "name": "Registrar Error de Zoho"
     },
     {
       "parameters": {
@@ -106,7 +141,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        960,
+        1440,
         300
       ],
       "id": "send-whatsapp-reply",
@@ -155,6 +190,35 @@
       ]
     },
     "Zoho CRM: Crear Lead": {
+      "main": [
+        [
+          {
+            "node": "¿Zoho Exitoso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Zoho Exitoso?": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp (API Graph)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar Error de Zoho",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Error de Zoho": {
       "main": [
         [
           {
