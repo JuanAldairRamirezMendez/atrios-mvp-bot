@@ -9,5 +9,3 @@ ENV N8N_USER_FOLDER=/home/node
 ENV GENERIC_TIMEZONE=America/Lima
 
 EXPOSE 5678
-
-CMD ["n8n"]
