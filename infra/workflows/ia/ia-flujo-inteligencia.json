@@ -48,7 +48,7 @@
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
-        896,
+        1488,
         0
       ],
       "id": "e21f39b8-e17a-4676-8039-332920b50cc6",
@@ -81,9 +81,82 @@
       ],
       "id": "2b3e3fc9-4143-43e2-89e7-ed230fc81e25",
       "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "67cd64a5-edaf-48b1-82c1-8dfca310d8b8",
+              "name": "system_prompt",
+              "value": "Eres el asistente virtual de Atrios, empresa peruana de instalación y mantenimiento de seguridad electrónica (cámaras de videovigilancia, cercos eléctricos y alarmas) para hogares y comercios.  REGLAS: - Responde en el idioma del cliente, con tono amable y breve (máximo 3 oraciones). - Solo hablas de los servicios de Atrios: cámaras, cercos eléctricos, alarmas, mantenimiento y garantías. - Si saludado = false en el estado, salúdalo y ofrece el menú: 1) Cámaras 2) Cercos eléctricos 3) Alarmas 4) Mantenimiento o garantía. Si saludado = true, NO vuelvas a saludar. - Tu objetivo es identificar qué servicio necesita y pedir sus datos básicos: nombre, distrito o dirección y servicio de interés. - No inventes precios ni plazos. Para cotizaciones o garantías específicas, di que un asesor lo contactará. - Si no entiendes el mensaje o piden algo fuera de tu alcance, responde exactamente: DERIVAR_HUMANO",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        896,
+        0
+      ],
+      "id": "d897db95-8efe-40e7-b83b-1e1a814b18ea",
+      "name": "Prompt del sistema"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: {\n    parts: [{ text: $json.system_prompt + \"\\n\\nESTADO ACTUAL DE LA CONVERSACIÓN: \" + JSON.stringify($json.estado) }]\n  },\n  contents: [{ role: \"user\", parts: [{ text: $json.mensaje }] }],\n  generationConfig: { temperature: 0.4, maxOutputTokens: 500 }\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1104,
+        0
+      ],
+      "id": "8d9ceeee-ccf1-4861-807f-b7914b06cbf0",
+      "name": "HTTP Request",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "fDrT0iS6Oglj47sh",
+          "name": "Gemini API KEY"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst prev = $('Prompt del sistema').first().json;\n\nconst texto = (resp.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();\nconst derivar = texto === '' || texto.includes('DERIVAR_HUMANO');\n\nconst estado = { ...prev.estado };\nestado.historial = [\n  ...(estado.historial || []),\n  { rol: 'usuario', texto: prev.mensaje },\n  { rol: 'bot', texto }\n].slice(-10);\n\nif (!derivar) {\n  estado.saludado = true;\n  if (estado.paso === 'inicio') estado.paso = 'menu';\n}\nestado.actualizado = new Date().toISOString();\n\nreturn [{\n  json: {\n    telefono: prev.telefono,\n    mensaje: prev.mensaje,\n    respuesta: derivar ? null : texto,\n    derivar,\n    estado\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        0
+      ],
+      "id": "512bf2b8-2df5-4556-b1ed-3efe74d95f3c",
+      "name": "Procesar respuesta"
     }
   ],
-  "pinData": {},
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "telefono": "981561552",
+          "mensaje": "HOLA"
+        }
+      }
+    ]
+  },
   "connections": {
     "Redis": {
       "main": [
@@ -100,7 +173,7 @@
       "main": [
         [
           {
-            "node": "Redis1",
+            "node": "Prompt del sistema",
             "type": "main",
             "index": 0
           }
@@ -117,6 +190,44 @@
           }
         ]
       ]
+    },
+    "Prompt del sistema": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis1": {
+      "main": [
+        []
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Procesar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Redis1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -124,7 +235,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "c777c4eb-74f8-4f52-ae64-8f9597969316",
+  "versionId": "70b25841-4c88-4b83-be09-ded903cf9187",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "52ced82547665e0e456165a6386346ce56c03c027f6f0986ffc6b684b790e415"
