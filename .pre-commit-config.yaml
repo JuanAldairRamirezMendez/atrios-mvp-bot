@@ -1,0 +1,9 @@
+repos:
+  - repo: https://github.com/trufflesecurity/trufflehog
+    rev: v3.99.9
+    hooks:
+      - id: trufflehog
+        name: TruffleHog - Buscando secretos
+        entry: trufflehog filesystem .
+        language: system
+        pass_filenames: false

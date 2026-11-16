@@ -1,0 +1,9 @@
+{
+  "messaging_product": "whatsapp",
+  "recipient_type": "individual",
+  "to": "51999888777",
+  "type": "text",
+  "text": {
+    "body": "Hola, necesito cotizar 4 cámaras de seguridad para mi oficina"
+  }
+}

@@ -1,0 +1,393 @@
+{
+  "name": "Atrios WhatsApp Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "whatsapp-webhook",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "whatsapp-webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"statusCode\": 200 } }}"
+      },
+      "id": "respond-200",
+      "name": "200 OK to Meta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "phone",
+              "value": "={{ $json.entry[0].changes[0].value.messages[0].from }}"
+            },
+            {
+              "name": "message_text",
+              "value": "={{ $json.entry[0].changes[0].value.messages[0].text.body }}"
+            },
+            {
+              "name": "message_id",
+              "value": "={{ $json.entry[0].changes[0].value.messages[0].id }}"
+            }
+          ]
+        }
+      },
+      "id": "extract-message",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "={{ 'conversation:' + $json.phone }}",
+        "options": {}
+      },
+      "id": "redis-get-state",
+      "name": "Redis: Get Conversation State",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "credentials": {
+        "redis": {
+          "id": "1",
+          "name": "Atrios Redis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json }}",
+              "operation": "empty"
+            }
+          ]
+        }
+      },
+      "id": "check-state",
+      "name": "State Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "retry_count",
+              "value": "0"
+            },
+            {
+              "name": "history",
+              "value": "[]"
+            }
+          ]
+        }
+      },
+      "id": "init-state",
+      "name": "Init State (No History)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst stateData = items[0].json;\nlet history = [];\nlet retryCount = 0;\n\nif (stateData && stateData.history) {\n  history = JSON.parse(stateData.history);\n  retryCount = parseInt(stateData.retry_count) || 0;\n}\n\nreturn [{\n  json: {\n    phone: $('Extract Message Data').item.json.phone,\n    message_text: $('Extract Message Data').item.json.message_text,\n    history: history,\n    retry_count: retryCount\n  }\n}];"
+      },
+      "id": "build-context",
+      "name": "Build Context for Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"contents\": [{ \"parts\": [{ \"text\": $('Build Context for Gemini').item.json.message_text }] }], \"systemInstruction\": { \"parts\": [{ \"text\": 'Eres un asistente de Atrios, empresa de seguridad electrónica. Tu trabajo es: 1) Responder consultas sobre cámaras, alarmas, control de acceso. 2) Extraer datos del prospecto: nombre, empresa, teléfono, email, tipo de servicio de interés, presupuesto aproximado. 3) Si el usuario confirma que quiere una cotización formal, indica que un asesor se contactará. 4) Responde SIEMPRE en español, de forma profesional y concisa. 5) Devuelve un JSON con: { \"response\": \"texto para el usuario\", \"lead_data\": { \"name\": \"\", \"company\": \"\", \"email\": \"\", \"phone\": \"\", \"service\": \"\", \"budget\": \"\" }, \"intent\": \"cotizacion|info|no_interesado|humano\", \"confidence\": 0.0-1.0 }' }] } } } }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "call-gemini",
+      "name": "Call Gemini API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1780, 300],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst candidates = response.candidates || [];\nif (candidates.length === 0) {\n  throw new Error('Gemini returned no candidates');\n}\nconst text = candidates[0].content.parts[0].text;\nlet parsed;\ntry {\n  const jsonMatch = text.match(/\\{[^]*\\}/);\n  parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { response: text, lead_data: {}, intent: 'info', confidence: 0.5 };\n} catch (e) {\n  parsed = { response: text, lead_data: {}, intent: 'info', confidence: 0.3 };\n}\nreturn [{ json: parsed }];"
+      },
+      "id": "parse-gemini",
+      "name": "Parse Gemini Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.confidence }}",
+              "operation": "gte",
+              "value2": 0.7
+            }
+          ]
+        }
+      },
+      "id": "check-confidence",
+      "name": "Confidence >= 0.7?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://graph.facebook.com/v18.0/' + $env.WHATSAPP_PHONE_NUMBER_ID + '/messages' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.WHATSAPP_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"messaging_product\": \"whatsapp\", \"to\": $('Extract Message Data').item.json.phone, \"type\": \"text\", \"text\": { \"body\": $json.response } } }}"
+      },
+      "id": "send-whatsapp-reply",
+      "name": "Send WhatsApp Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2440, 200]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "={{ 'conversation:' + $('Extract Message Data').item.json.phone }}",
+        "value": "={{ JSON.stringify({ history: $('Build Context for Gemini').item.json.history.concat($('Parse Gemini Response').item.json), retry_count: $('Build Context for Gemini').item.json.retry_count }) }}",
+        "expire": true,
+        "ttl": 86400
+      },
+      "id": "save-state",
+      "name": "Redis: Save State",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [2440, 300],
+      "credentials": {
+        "redis": {
+          "id": "1",
+          "name": "Atrios Redis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZOHO_API_BASE + '/crm/v' + $env.ZOHO_CRM_API_VERSION + '/Leads' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Zoho-oauthtoken ' + $env.ZOHO_REFRESH_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"data\": [{ \"Last_Name\": $('Parse Gemini Response').item.json.lead_data.name || 'Sin nombre', \"Company\": $('Parse Gemini Response').item.json.lead_data.company || 'Atrios [TEST]', \"Email\": $('Parse Gemini Response').item.json.lead_data.email || '', \"Phone\": $('Extract Message Data').item.json.phone, \"Description\": 'Servicio: ' + ($('Parse Gemini Response').item.json.lead_data.service || 'No especificado') + ' | Interes: ' + $('Parse Gemini Response').item.json.intent + ' | Confianza: ' + $('Parse Gemini Response').item.json.confidence + ' | Origen: WhatsApp Bot [TEST]' }] }}"
+      },
+      "id": "create-zoho-lead",
+      "name": "Zoho CRM: Create Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2440, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $('Build Context for Gemini').item.json.retry_count }}",
+              "operation": "gte",
+              "value2": 3
+            }
+          ]
+        }
+      },
+      "id": "max-retries",
+      "name": "Max Retries Reached?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2220, 500]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "retry_count",
+              "value": "={{ (parseInt($('Build Context for Gemini').item.json.retry_count) + 1).toString() }}"
+            },
+            {
+              "name": "history",
+              "value": "={{ $('Build Context for Gemini').item.json.history }}"
+            }
+          ]
+        }
+      },
+      "id": "increment-retry",
+      "name": "Increment Retry",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [2440, 550]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "={{ 'conversation:' + $('Extract Message Data').item.json.phone }}",
+        "value": "={{ JSON.stringify({ history: $json.history, retry_count: $json.retry_count }) }}",
+        "expire": true,
+        "ttl": 86400
+      },
+      "id": "save-retry-state",
+      "name": "Redis: Save Retry State",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [2660, 550],
+      "credentials": {
+        "redis": {
+          "id": "1",
+          "name": "Atrios Redis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.WHATSAPP_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"messaging_product\": \"whatsapp\", \"to\": $('Extract Message Data').item.json.phone, \"type\": \"text\", \"text\": { \"body\": 'Gracias por contactar a Atrios. Un asesor se pondrá en contacto contigo en breve para atender tu solicitud.' } } }}"
+      },
+      "id": "send-fallback-reply",
+      "name": "Send Fallback Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2440, 650]
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [[{ "node": "200 OK to Meta", "type": "main", "index": 0 }]]
+    },
+    "200 OK to Meta": {
+      "main": [[{ "node": "Extract Message Data", "type": "main", "index": 0 }]]
+    },
+    "Extract Message Data": {
+      "main": [[{ "node": "Redis: Get Conversation State", "type": "main", "index": 0 }]]
+    },
+    "Redis: Get Conversation State": {
+      "main": [[{ "node": "State Exists?", "type": "main", "index": 0 }]]
+    },
+    "State Exists?": {
+      "main": [
+        [{ "node": "Build Context for Gemini", "type": "main", "index": 0 }],
+        [{ "node": "Init State (No History)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Init State (No History)": {
+      "main": [[{ "node": "Build Context for Gemini", "type": "main", "index": 0 }]]
+    },
+    "Build Context for Gemini": {
+      "main": [[{ "node": "Call Gemini API", "type": "main", "index": 0 }]]
+    },
+    "Call Gemini API": {
+      "main": [[{ "node": "Parse Gemini Response", "type": "main", "index": 0 }]]
+    },
+    "Parse Gemini Response": {
+      "main": [[{ "node": "Confidence >= 0.7?", "type": "main", "index": 0 }]]
+    },
+    "Confidence >= 0.7?": {
+      "main": [
+        [{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }],
+        [{ "node": "Max Retries Reached?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send WhatsApp Reply": {
+      "main": [[{ "node": "Redis: Save State", "type": "main", "index": 0 }]]
+    },
+    "Redis: Save State": {
+      "main": [[{ "node": "Zoho CRM: Create Lead", "type": "main", "index": 0 }]]
+    },
+    "Max Retries Reached?": {
+      "main": [
+        [{ "node": "Send Fallback Reply", "type": "main", "index": 0 }],
+        [{ "node": "Increment Retry", "type": "main", "index": 0 }]
+      ]
+    },
+    "Increment Retry": {
+      "main": [[{ "node": "Redis: Save Retry State", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {},
+  "active": false,
+  "versionId": "1"
+}

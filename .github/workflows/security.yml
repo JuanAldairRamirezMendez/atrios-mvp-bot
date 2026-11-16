@@ -1,0 +1,20 @@
+name: Security - Trufflehog
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  trufflehog:
+    name: TruffleHog - Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified --fail
