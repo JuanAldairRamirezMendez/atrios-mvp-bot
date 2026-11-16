@@ -1,6 +1,65 @@
 {
-  "name": "03_zoho_out",
+  "name": "atrios-mvp-bot",
   "nodes": [
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=chat:{{ $json.telefono }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ],
+      "id": "51eccbfa-67b0-4675-8672-f2a9205374f6",
+      "name": "Redis",
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "SRVULCZcmvK2vdbc",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const entrada = $('When Executed by Another Workflow').first().json;\nlet guardado = $input.first().json.estado;\n\n// Redis devuelve texto, hay que convertirlo a objeto\nif (typeof guardado === 'string') {\n  try { guardado = JSON.parse(guardado); } catch (e) { guardado = null; }\n}\n\nconst esNuevo = !guardado;\nconst estado = guardado || {\n  paso: 'inicio',\n  saludado: false,\n  intentos: 0,\n  historial: [],\n  actualizado: new Date().toISOString()\n};\n\nreturn [{\n  json: {\n    telefono: entrada.telefono,\n    mensaje: entrada.mensaje,\n    esNuevo,\n    estado\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "35e65cdf-00e8-40e8-ba7d-4a52485d23a3",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=chat:{{ $json.telefono }}",
+        "value": "={{ JSON.stringify($json.estado) }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 86400
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1840,
+        48
+      ],
+      "id": "e21f39b8-e17a-4676-8039-332920b50cc6",
+      "name": "Redis1",
+      "credentials": {
+        "redis": {
+          "id": "SRVULCZcmvK2vdbc",
+          "name": "Redis account"
+        }
+      }
+    },
     {
       "parameters": {
         "workflowInputs": {
@@ -9,22 +68,7 @@
               "name": "telefono"
             },
             {
-              "name": "respuesta"
-            },
-            {
-              "name": "derivar"
-            },
-            {
-              "name": "nombre"
-            },
-            {
-              "name": "servicio"
-            },
-            {
-              "name": "direccion"
-            },
-            {
-              "name": "estado"
+              "name": "mensaje"
             }
           ]
         }
@@ -32,23 +76,196 @@
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.3,
       "position": [
-        240,
-        300
+        224,
+        0
       ],
-      "id": "trigger-salida",
+      "id": "2b3e3fc9-4143-43e2-89e7-ed230fc81e25",
       "name": "When Executed by Another Workflow"
     },
     {
       "parameters": {
-        "jsCode": "const entrada = $input.first().json;\n\n// Extraer datos con valores por defecto seguros\nconst telefono = String(entrada.telefono || '').replace(/[^0-9]/g, '');\nconst nombre = (entrada.nombre || '').trim() || `Prospecto WhatsApp ${telefono}`;\nconst servicio = (entrada.servicio || 'Seguridad Electrónica').trim();\nconst direccion = (entrada.direccion || 'No especificada').trim();\nconst estado = entrada.estado || (entrada.derivar ? 'Atención Urgente' : 'No Contactado');\n\n// Si la IA derivó a humano o no hay respuesta, mensaje de respaldo\nconst mensajeRespuesta = entrada.derivar || !entrada.respuesta\n  ? 'Gracias por comunicarte con Atrios. Un asesor comercial especializado se pondrá en contacto contigo a la brevedad para brindarte una atención personalizada.'\n  : entrada.respuesta;\n\nreturn [{\n  json: {\n    telefono,\n    nombre,\n    servicio,\n    direccion,\n    estado,\n    mensaje_final: mensajeRespuesta,\n    Last_Name: nombre,\n    Company: 'Particular - Atrios [TEST]',\n    Phone: telefono,\n    Street: direccion,\n    Lead_Status: estado,\n    Description: `Servicio de interés: ${servicio} | Origen: WhatsApp Bot Atrios | Derivar a Humano: ${entrada.derivar ? 'SÍ' : 'NO'}`\n  }\n}];"
+        "assignments": {
+          "assignments": [
+            {
+              "id": "67cd64a5-edaf-48b1-82c1-8dfca310d8b8",
+              "name": "system_prompt",
+              "value": "Eres el asistente virtual de Atrios, empresa peruana de instalación y mantenimiento de seguridad electrónica (cámaras de videovigilancia, cercos eléctricos y alarmas) para hogares y comercios.  REGLAS: - Responde en el idioma del cliente, con tono amable y breve (máximo 3 oraciones). - Solo hablas de los servicios de Atrios: cámaras, cercos eléctricos, alarmas, mantenimiento y garantías. - Si saludado = false en el estado, salúdalo y ofrece el menú: 1) Cámaras 2) Cercos eléctricos 3) Alarmas 4) Mantenimiento o garantía. Si saludado = true, NO vuelvas a saludar. - Tu objetivo es identificar qué servicio necesita y pedir sus datos básicos: nombre, distrito o dirección y servicio de interés. - No inventes precios ni plazos. Para cotizaciones o garantías específicas, di que un asesor lo contactará. - Si no entiendes el mensaje o piden algo fuera de tu alcance, responde exactamente: DERIVAR_HUMANO",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        896,
+        0
+      ],
+      "id": "d897db95-8efe-40e7-b83b-1e1a814b18ea",
+      "name": "Prompt del sistema"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: {\n    parts: [{ text: $json.system_prompt + \"\\n\\nESTADO ACTUAL DE LA CONVERSACIÓN: \" + JSON.stringify($json.estado) }]\n  },\n  contents: [{ role: \"user\", parts: [{ text: $json.mensaje }] }],\n  generationConfig: { temperature: 0.4, maxOutputTokens: 500 }\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1104,
+        0
+      ],
+      "id": "8d9ceeee-ccf1-4861-807f-b7914b06cbf0",
+      "name": "HTTP Request",
+      "retryOnFail": false,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "fDrT0iS6Oglj47sh",
+          "name": "Gemini API KEY"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst prev = $('Prompt del sistema').first().json;\n\nconst texto = (resp.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();\nconst derivar = texto === '' || texto.includes('DERIVAR_HUMANO');\n\nconst estado = { ...prev.estado };\nestado.historial = [\n  ...(estado.historial || []),\n  { rol: 'usuario', texto: prev.mensaje },\n  { rol: 'bot', texto }\n].slice(-10);\n\nif (!derivar) {\n  estado.saludado = true;\n  if (estado.paso === 'inicio') estado.paso = 'menu';\n}\nestado.actualizado = new Date().toISOString();\n\nreturn [{\n  json: {\n    telefono: prev.telefono,\n    mensaje: prev.mensaje,\n    respuesta: derivar ? null : texto,\n    derivar,\n    estado\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        480,
-        300
+        1312,
+        -48
       ],
-      "id": "preparar-datos-lead",
+      "id": "512bf2b8-2df5-4556-b1ed-3efe74d95f3c",
+      "name": "Procesar respuesta"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Prompt del sistema').first().json;\nconst intento = $runIndex + 1; // 1, 2, 3: cuántas veces ha fallado\nconst raw = JSON.stringify($json);\nconst esRateLimit = /429|RESOURCE_EXHAUSTED|rate limit/i.test(raw);\nconst reintentar = esRateLimit && intento < 3;\n\nreturn [{ json: { ...base, intento, esRateLimit, reintentar } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        336
+      ],
+      "id": "6d8acdc4-e982-4e9a-a56d-41a40a1704a1",
+      "name": "Evaluar error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "51a1351d-4e58-486a-bfb3-d870ddc6f5d0",
+              "leftValue": "={{ $json.reintentar }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1184,
+        480
+      ],
+      "id": "4d3bf8a2-9570-4a3a-adc1-d8bacb212afb",
+      "name": "¿Reintentar?"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        208
+      ],
+      "id": "770bbd06-9f4f-4140-b424-5a23bd521730",
+      "name": "Wait",
+      "webhookId": "523b44ee-40de-4822-9c41-7161ae6ff136"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst base = $('Prompt del sistema').first().json;\n\nconst estado = {\n  ...base.estado,\n  paso: 'Requiere Humano',\n  intentos: src.intento ?? 0,\n  actualizado: new Date().toISOString()\n};\nestado.historial = [\n  ...(estado.historial || []),\n  { rol: 'usuario', texto: base.mensaje }\n].slice(-10);\n\nreturn [{\n  json: {\n    telefono: base.telefono,\n    mensaje: base.mensaje,\n    respuesta: 'Gracias por escribirnos. Un asesor de Atrios te atenderá en breve para ayudarte personalmente.',\n    derivar: true,\n    estado\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        352
+      ],
+      "id": "96c75663-b8c0-4800-b80d-0e0910d06947",
+      "name": "Preparar derivación"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "f2091b9b-6676-4d51-af1d-cbfb9d03d470",
+              "leftValue": "={{ $json.derivar }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1536,
+        -48
+      ],
+      "id": "9740d7c5-7c62-4250-8f05-edeabcb32d23",
+      "name": "¿Derivar?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recuperar la respuesta generada por la IA (de 'Procesar respuesta' o 'Preparar derivación')\nlet origen = {};\ntry {\n  const deriv = $('Preparar derivación').last();\n  if (deriv && deriv.json && deriv.json.derivar) {\n    origen = deriv.json;\n  } else {\n    origen = $('Procesar respuesta').last().json;\n  }\n} catch (e) {\n  origen = $('Procesar respuesta').first()?.json || $('Preparar derivación').first()?.json || {};\n}\n\nconst telefono = String(origen.telefono || '').replace(/[^0-9]/g, '');\nconst mensaje_final = origen.respuesta || 'Gracias por comunicarte con Atrios. Un asesor te atenderá a la brevedad.';\nconst derivar = Boolean(origen.derivar);\n\nreturn [{\n  json: {\n    telefono,\n    mensaje_final,\n    derivar,\n    Last_Name: `Prospecto WhatsApp ${telefono}`,\n    Company: 'Particular - Atrios [TEST]',\n    Phone: telefono,\n    Street: 'Lima, Perú',\n    Lead_Status: derivar ? 'Atención Urgente' : 'No Contactado',\n    Description: `Servicio: Seguridad Electrónica | Derivación Humana: ${derivar ? 'SÍ' : 'NO'} | Origen: Bot WhatsApp Atrios`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        48
+      ],
+      "id": "preparar-datos-lead-antony",
       "name": "Preparar Datos Lead"
     },
     {
@@ -67,10 +284,10 @@
       "type": "n8n-nodes-base.zohoCrm",
       "typeVersion": 1,
       "position": [
-        720,
-        300
+        2320,
+        48
       ],
-      "id": "zoho-crm-lead",
+      "id": "zoho-crm-lead-antony",
       "name": "Zoho CRM: Crear Lead",
       "onError": "continueRegularOutput",
       "credentials": {
@@ -95,23 +312,23 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        960,
-        300
+        2560,
+        48
       ],
-      "id": "verificar-error-zoho",
+      "id": "verificar-error-zoho-antony",
       "name": "¿Zoho Exitoso?"
     },
     {
       "parameters": {
-        "jsCode": "const respuestaZoho = $input.first().json;\nconst entradaOriginal = $('Preparar Datos Lead').first().json;\n\nconst errorLog = {\n  nivel: 'WARN',\n  tipo: 'ERROR_VALIDACION_ZOHO',\n  fecha: new Date().toISOString(),\n  telefono: entradaOriginal.telefono,\n  nombre: entradaOriginal.nombre,\n  detalle: respuestaZoho.error || respuestaZoho.message || respuestaZoho.data?.[0]?.message || 'Fallo de validación de campos en Zoho CRM',\n  codigo: respuestaZoho.code || respuestaZoho.data?.[0]?.code || 'VALIDATION_FAILED'\n};\n\n// Registrar en consola de n8n para auditoría\nconsole.warn('⚠️ [AUDITORIA ATRIOS] Error al insertar en Zoho CRM:', JSON.stringify(errorLog));\n\n// Pasar datos originales hacia WhatsApp para no cortar la experiencia del usuario\nreturn [{\n  json: {\n    ...entradaOriginal,\n    zoho_log: errorLog\n  }\n}];"
+        "jsCode": "const respuestaZoho = $input.first().json;\nconst datosLead = $('Preparar Datos Lead').first().json;\n\nconst errorLog = {\n  nivel: 'WARN',\n  tipo: 'ERROR_VALIDACION_ZOHO',\n  fecha: new Date().toISOString(),\n  telefono: datosLead.telefono,\n  detalle: respuestaZoho.error || respuestaZoho.message || respuestaZoho.data?.[0]?.message || 'Fallo de validación de campos en Zoho CRM',\n  codigo: respuestaZoho.code || respuestaZoho.data?.[0]?.code || 'VALIDATION_FAILED'\n};\n\nconsole.warn('⚠️ [AUDITORIA ATRIOS] Error al insertar en Zoho CRM:', JSON.stringify(errorLog));\n\nreturn [{\n  json: {\n    ...datosLead,\n    zoho_log: errorLog\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1200,
-        440
+        2800,
+        224
       ],
-      "id": "registrar-error-zoho",
+      "id": "registrar-error-zoho-antony",
       "name": "Registrar Error de Zoho"
     },
     {
@@ -133,7 +350,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  messaging_product: \"whatsapp\",\n  recipient_type: \"individual\",\n  to: $('Preparar Datos Lead').item.json.telefono,\n  type: \"text\",\n  text: {\n    body: $('Preparar Datos Lead').item.json.mensaje_final\n  }\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: \"whatsapp\",\n  recipient_type: \"individual\",\n  to: $json.telefono,\n  type: \"text\",\n  text: {\n    body: $json.mensaje_final\n  }\n}) }}",
         "options": {
           "timeout": 10000
         }
@@ -141,10 +358,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1440,
-        300
+        3040,
+        48
       ],
-      "id": "send-whatsapp-reply",
+      "id": "send-whatsapp-reply-antony",
       "name": "Enviar WhatsApp (API Graph)",
       "retryOnFail": true,
       "maxTries": 3,
@@ -155,23 +372,160 @@
     "When Executed by Another Workflow": [
       {
         "json": {
-          "telefono": "51981561552",
-          "respuesta": "¡Hola! Con gusto te cotizamos las cámaras de seguridad. Un asesor comercial se comunicará contigo.",
-          "derivar": false,
-          "nombre": "Carlos Mendoza",
-          "servicio": "Cámaras de seguridad",
-          "direccion": "Av. Javier Prado Este 1234, San Isidro",
-          "estado": "Nuevo"
+          "telefono": "981561552",
+          "mensaje": "HOLA"
         }
       }
     ]
   },
   "connections": {
+    "Redis": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Prompt del sistema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "When Executed by Another Workflow": {
       "main": [
         [
           {
+            "node": "Redis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt del sistema": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis1": {
+      "main": [
+        [
+          {
             "node": "Preparar Datos Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Procesar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar respuesta": {
+      "main": [
+        [
+          {
+            "node": "¿Derivar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluar error": {
+      "main": [
+        [
+          {
+            "node": "¿Reintentar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reintentar?": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar derivación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar derivación": {
+      "main": [
+        [
+          {
+            "node": "Redis1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Derivar?": {
+      "main": [
+        [
+          {
+            "node": "Preparar derivación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Redis1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
             "type": "main",
             "index": 0
           }
@@ -232,6 +586,15 @@
   },
   "active": false,
   "settings": {
-    "executionOrder": "v1"
-  }
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e58129a3-8991-4e4b-97e1-889a7f342410",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "52ced82547665e0e456165a6386346ce56c03c027f6f0986ffc6b684b790e415"
+  },
+  "nodeGroups": [],
+  "id": "rHjzMbCn0QACreTQ",
+  "tags": []
 }
