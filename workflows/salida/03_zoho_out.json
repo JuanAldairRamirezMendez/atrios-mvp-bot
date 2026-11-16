@@ -56,7 +56,7 @@
         "resource": "lead",
         "operation": "create",
         "lastName": "={{ $json.Last_Name || 'Cliente WhatsApp' }}",
-        "company": "={{ $json.Company || 'Particular - Atrios [TEST]' }}",
+        "Company": "={{ $json.Company || 'Particular - Atrios [TEST]' }}",
         "additionalFields": {
           "phone": "={{ $json.Phone }}",
           "street": "={{ $json.Street }}",
