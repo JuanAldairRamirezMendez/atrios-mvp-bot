@@ -1,0 +1,135 @@
+{
+  "name": "atrios-mvp-bot",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=chat:{{ $json.telefono }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ],
+      "id": "51eccbfa-67b0-4675-8672-f2a9205374f6",
+      "name": "Redis",
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "SRVULCZcmvK2vdbc",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const entrada = $('When Executed by Another Workflow').first().json;\nlet guardado = $input.first().json.estado;\n\n// Redis devuelve texto, hay que convertirlo a objeto\nif (typeof guardado === 'string') {\n  try { guardado = JSON.parse(guardado); } catch (e) { guardado = null; }\n}\n\nconst esNuevo = !guardado;\nconst estado = guardado || {\n  paso: 'inicio',\n  saludado: false,\n  intentos: 0,\n  historial: [],\n  actualizado: new Date().toISOString()\n};\n\nreturn [{\n  json: {\n    telefono: entrada.telefono,\n    mensaje: entrada.mensaje,\n    esNuevo,\n    estado\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "35e65cdf-00e8-40e8-ba7d-4a52485d23a3",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=chat:{{ $json.telefono }}",
+        "value": "={{ JSON.stringify($json.estado) }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 86400
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        896,
+        0
+      ],
+      "id": "e21f39b8-e17a-4676-8039-332920b50cc6",
+      "name": "Redis1",
+      "credentials": {
+        "redis": {
+          "id": "SRVULCZcmvK2vdbc",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "telefono"
+            },
+            {
+              "name": "mensaje"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        224,
+        0
+      ],
+      "id": "2b3e3fc9-4143-43e2-89e7-ed230fc81e25",
+      "name": "When Executed by Another Workflow"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Redis": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Redis1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Redis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "c777c4eb-74f8-4f52-ae64-8f9597969316",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "52ced82547665e0e456165a6386346ce56c03c027f6f0986ffc6b684b790e415"
+  },
+  "nodeGroups": [],
+  "id": "rHjzMbCn0QACreTQ",
+  "tags": []
+}
