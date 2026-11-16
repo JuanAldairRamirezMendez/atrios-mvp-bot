@@ -78,6 +78,42 @@
           "name": "Zoho CRM OAuth2 Account"
         }
       }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.WHATSAPP_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: \"whatsapp\",\n  recipient_type: \"individual\",\n  to: $('Preparar Datos Lead').item.json.telefono,\n  type: \"text\",\n  text: {\n    body: $('Preparar Datos Lead').item.json.mensaje_final\n  }\n}) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        300
+      ],
+      "id": "send-whatsapp-reply",
+      "name": "Enviar WhatsApp (API Graph)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     }
   ],
   "pinData": {
@@ -112,6 +148,17 @@
         [
           {
             "node": "Zoho CRM: Crear Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zoho CRM: Crear Lead": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp (API Graph)",
             "type": "main",
             "index": 0
           }
