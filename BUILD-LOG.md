@@ -166,6 +166,20 @@ Webhook → 200 OK → Extract Data → Redis GET → State exists?
 | 3 | n8n Workflow (WhatsApp → Gemini → Zoho) | DONE |
 | 4 | Documentation (README, ROLEs, demo) | DONE |
 
+## Slice 7 — Despliegue en Producción (Railway) — 2026-11-16
+Scope: Configurar el entorno de producción en la nube para el MVP.
+Changes: 
+- Creado `infra/Dockerfile` optimizado para Railway (usando imagen oficial de n8n).
+- Se solucionó el error de permisos (`EACCES`) configurando `USER root` y `ENV N8N_USER_FOLDER=/home/node`.
+- Se solucionó el error de comando no encontrado configurando `CMD ["n8n"]`.
+- Creado servicio de Redis en Railway.
+- Montado Volumen Persistente exactamente en `/home/node/.n8n`.
+- Configuradas variables de entorno en Railway: `N8N_ENCRYPTION_KEY`, `N8N_PORT=5678`, `N8N_PROTOCOL=https`, `RAILWAY_RUN_UID=0`.
+Commands run: git push origin main (Railway auto-deploy).
+Result: Despliegue exitoso (Status: Green). n8n accesible vía dominio público de Railway.
+Status: DONE
+Notes: La URL de producción es https://atrios-mvp-bot-production.up.railway.app. El compañero Alonzo (Dev de entrada) se encargará de crear la cuenta de administrador y configurar el Webhook en producción posteriormente. La verificación en Meta sigue pausada hasta que el flujo local esté listo.
+
 ## Siguientes pasos (post-MVP)
 - Configurar credenciales reales en `.env`
 - Levantar infraestructura con `docker compose up -d`
